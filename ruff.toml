@@ -1,0 +1,15 @@
+line-length = 88
+target-version = "py313"
+
+[lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "D"]
+ignore = ["D203", "D213"]
+
+[lint.isort]
+force-sort-within-sections = true
+known-first-party = ["homeassistant"]
+combine-as-imports = true
+split-on-trailing-comma = false
+
+[lint.pydocstyle]
+convention = "pep257"
