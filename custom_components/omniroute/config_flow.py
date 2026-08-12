@@ -41,9 +41,15 @@ from .const import (
     CONF_MONITORING,
     CONF_SCAN_INTERVAL,
     CONF_TEMPERATURE,
+    CONF_TTS_SPEED,
+    CONF_VOICE,
     DEFAULT_BASE_URL,
     DEFAULT_MONITORING,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_STT_MODEL,
+    DEFAULT_TTS_MODEL,
+    DEFAULT_TTS_SPEED,
+    DEFAULT_VOICE,
     DOMAIN,
     LOGGER,
     MIN_SCAN_INTERVAL,
@@ -183,6 +189,8 @@ class OmniRouteConfigFlow(ConfigFlow, domain=DOMAIN):
         return {
             "conversation": ConversationFlowHandler,
             "ai_task_data": AITaskFlowHandler,
+            "stt": STTFlowHandler,
+            "tts": TTSFlowHandler,
         }
 
 
@@ -411,3 +419,112 @@ class AITaskFlowHandler(OmniRouteSubentryFlowHandler):
         )
 
         return self.async_show_form(step_id="init", data_schema=schema)
+
+
+class OmniRouteAudioFlowHandler(ConfigSubentryFlow):
+    """Shared behaviour for the speech subentries.
+
+    Audio models are addressed as ``provider/model`` and are not returned by
+    ``/v1/models``, so these steps take free text rather than a dropdown.
+    """
+
+    _step_schema: vol.Schema
+    _default_title: str
+
+    def __init__(self) -> None:
+        """Initialize the subentry flow."""
+        self.options: dict[str, Any] = {}
+
+    @property
+    def _is_new(self) -> bool:
+        """Return if this is a new subentry."""
+        return self.source == SOURCE_USER
+
+    async def async_step_user(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Create the entity."""
+        self.options = {}
+        return await self.async_step_init(user_input)
+
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Reconfigure the entity."""
+        self.options = self._get_reconfigure_subentry().data.copy()
+        return await self.async_step_init(user_input)
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> SubentryFlowResult:
+        """Manage the configuration."""
+        if self._get_entry().state is not ConfigEntryState.LOADED:
+            return self.async_abort(reason="entry_not_loaded")
+
+        if user_input is not None:
+            if self._is_new:
+                return self.async_create_entry(
+                    title=self._default_title, data=user_input
+                )
+            return self.async_update_and_abort(
+                self._get_entry(),
+                self._get_reconfigure_subentry(),
+                data=user_input,
+            )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                self._build_schema(), self.options
+            ),
+        )
+
+    def _build_schema(self) -> vol.Schema:
+        """Return the form schema."""
+        raise NotImplementedError
+
+
+class STTFlowHandler(OmniRouteAudioFlowHandler):
+    """Handle the speech-to-text subentry flow."""
+
+    _default_title = "OmniRoute STT"
+
+    def _build_schema(self) -> vol.Schema:
+        """Return the form schema."""
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_MODEL, default=self.options.get(CONF_MODEL, DEFAULT_STT_MODEL)
+                ): TextSelector(),
+                vol.Optional(CONF_PROMPT): TextSelector(
+                    TextSelectorConfig(multiline=True)
+                ),
+            }
+        )
+
+
+class TTSFlowHandler(OmniRouteAudioFlowHandler):
+    """Handle the text-to-speech subentry flow."""
+
+    _default_title = "OmniRoute TTS"
+
+    def _build_schema(self) -> vol.Schema:
+        """Return the form schema."""
+        return vol.Schema(
+            {
+                vol.Required(
+                    CONF_MODEL, default=self.options.get(CONF_MODEL, DEFAULT_TTS_MODEL)
+                ): TextSelector(),
+                vol.Required(
+                    CONF_VOICE, default=self.options.get(CONF_VOICE, DEFAULT_VOICE)
+                ): TextSelector(),
+                vol.Required(
+                    CONF_TTS_SPEED,
+                    default=self.options.get(CONF_TTS_SPEED, DEFAULT_TTS_SPEED),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0.25, max=4.0, step=0.05, mode=NumberSelectorMode.SLIDER
+                    )
+                ),
+            }
+        )

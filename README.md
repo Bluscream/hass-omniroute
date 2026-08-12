@@ -23,6 +23,8 @@ and a configurable base URL added.
 - Custom base URL, optional API key (OmniRoute runs unauthenticated by default)
 - **Conversation agent** with Home Assistant tool calling (Assist API)
 - **AI Task** entity with structured output + image/PDF attachments
+- **Speech-to-text** via `/v1/audio/transcriptions` and **text-to-speech** via
+  `/v1/audio/speech` — the same OpenAI-compatible endpoints the built-in integration uses
 - Model dropdown populated live from `GET /v1/models` (316 models on a stock OmniRoute),
   with free-text entry so combo IDs like `auto/best-coding` always work
 - Optional `max_tokens` / `temperature` per agent
@@ -79,6 +81,21 @@ Then: **Settings → Devices & Services → Add Integration → OmniRoute**.
 
 A conversation agent on `auto/best-chat` is created automatically. Add more agents or an
 AI Task entity from the integration page.
+
+## Speech entities need an audio provider
+
+OmniRoute exposes `/v1/audio/transcriptions` and `/v1/audio/speech`, so the STT and TTS
+entities are straight ports of the built-in OpenAI ones. Two things differ:
+
+- **Audio models are addressed as `provider/model`** (`groq/whisper-large-v3`,
+  `deepgram/nova-3`, `openai/tts-1`, `elevenlabs/eleven_turbo_v2_5`) and are **not** returned
+  by `/v1/models`, so those fields are free text rather than a dropdown.
+- **Your chat providers cannot do audio.** OmniRoute routes audio through a separate registry
+  of transcription/speech providers. With only Claude and Antigravity connected, a request
+  returns `No credentials for provider: openai`. Add an audio-capable provider in the
+  OmniRoute dashboard first — Groq and Pollinations have free Whisper tiers; Deepgram,
+  AssemblyAI, Soniox, Together and Vertex also work for STT; OpenAI, ElevenLabs, Deepgram,
+  Hyperbolic and HuggingFace for TTS.
 
 ## Verified against the live gateway
 

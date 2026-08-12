@@ -92,6 +92,60 @@
           }
         }
       }
+    },
+    "stt": {
+      "entry_type": "Speech-to-text",
+      "initiate_flow": {
+        "user": "Add speech-to-text",
+        "reconfigure": "Reconfigure speech-to-text"
+      },
+      "abort": {
+        "cannot_connect": "Failed to connect",
+        "entry_not_loaded": "The main integration entry is not loaded. Please ensure the integration is loaded before reconfiguring.",
+        "reconfigure_successful": "Re-configuration was successful",
+        "unknown": "Unexpected error"
+      },
+      "step": {
+        "init": {
+          "description": "Transcribes audio through the gateway's /v1/audio/transcriptions endpoint. This needs a provider with transcription credentials configured in OmniRoute (for example Groq, Deepgram or OpenAI) \u2014 your chat providers cannot do audio.",
+          "data": {
+            "model": "Model",
+            "prompt": "Prompt"
+          },
+          "data_description": {
+            "model": "Audio models are addressed as provider/model, e.g. groq/whisper-large-v3 or deepgram/nova-3. They are not listed by /v1/models, so type the one your gateway can route.",
+            "prompt": "Optional hint to steer the transcription, e.g. a list of names or jargon it should expect."
+          }
+        }
+      }
+    },
+    "tts": {
+      "entry_type": "Text-to-speech",
+      "initiate_flow": {
+        "user": "Add text-to-speech",
+        "reconfigure": "Reconfigure text-to-speech"
+      },
+      "abort": {
+        "cannot_connect": "Failed to connect",
+        "entry_not_loaded": "The main integration entry is not loaded. Please ensure the integration is loaded before reconfiguring.",
+        "reconfigure_successful": "Re-configuration was successful",
+        "unknown": "Unexpected error"
+      },
+      "step": {
+        "init": {
+          "description": "Speaks text through the gateway's /v1/audio/speech endpoint. This needs a provider with speech credentials configured in OmniRoute (for example OpenAI, ElevenLabs or Deepgram).",
+          "data": {
+            "model": "Model",
+            "voice": "Voice",
+            "tts_speed": "Speed"
+          },
+          "data_description": {
+            "model": "Addressed as provider/model, e.g. openai/tts-1, elevenlabs/eleven_turbo_v2_5 or deepgram/aura-asteria-en.",
+            "voice": "Voice name for the chosen backend. OpenAI takes alloy, nova, shimmer and friends; other backends use their own names.",
+            "tts_speed": "Playback speed multiplier"
+          }
+        }
+      }
     }
   },
   "options": {
