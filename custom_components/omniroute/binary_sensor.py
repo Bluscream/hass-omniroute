@@ -10,6 +10,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
@@ -52,7 +53,13 @@ async def async_setup_entry(
         if entities:
             async_add_entities(entities)
 
-    async_add_entities([GatewayProblemSensor(coordinator)])
+    async_add_entities(
+        [
+            GatewayProblemSensor(coordinator),
+            GatewayDegradedSensor(coordinator),
+            GatewayDatabaseSensor(coordinator),
+        ]
+    )
     _add_new_entities()
     entry.async_on_unload(coordinator.async_add_listener(_add_new_entities))
 
@@ -118,3 +125,50 @@ class ApiKeyBudgetSensor(OmniRouteApiKeyEntity, BinarySensorEntity):
         if not api_key.has_budget:
             return False
         return not api_key.allowed or api_key.warning_reached
+
+
+class GatewayDegradedSensor(OmniRouteGatewayEntity, BinarySensorEntity):
+    """On while OmniRoute has features in degraded mode."""
+
+    _attr_name = "Degraded"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: OmniRouteCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, "degraded")
+
+    @property
+    def is_on(self) -> bool:
+        """Return whether degradation is active."""
+        return self.gateway.degradation_active
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        """Return which features are degraded."""
+        features = self.gateway.degraded_features
+        return {"features": features} if features else None
+
+
+class GatewayDatabaseSensor(OmniRouteGatewayEntity, BinarySensorEntity):
+    """On when the gateway's database self-check reports issues."""
+
+    _attr_name = "Database problem"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: OmniRouteCoordinator) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, "database")
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the database is unhealthy."""
+        healthy = self.gateway.database_healthy
+        return None if healthy is None else not healthy
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        """Return the reported issues."""
+        issues = self.gateway.database_issues
+        return {"issues": issues} if issues else None

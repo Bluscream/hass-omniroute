@@ -87,6 +87,10 @@ class OmniRouteApi:
             token_health,
             analytics,
             keys,
+            health,
+            degradation,
+            db_health,
+            storage,
         ) = await asyncio.gather(
             self._get("/api/providers"),
             self._get_optional("/api/usage/quota"),
@@ -95,6 +99,10 @@ class OmniRouteApi:
             self._get_optional("/api/token-health"),
             self._get_optional("/api/usage/analytics"),
             self._get_optional("/api/keys"),
+            self._get_optional("/api/monitoring/health"),
+            self._get_optional("/api/health/degradation"),
+            self._get_optional("/api/db/health"),
+            self._get_optional("/api/storage/health"),
         )
         return {
             "connections": connections,
@@ -104,6 +112,10 @@ class OmniRouteApi:
             "token_health": token_health,
             "analytics": analytics,
             "keys": keys,
+            "health": health,
+            "degradation": degradation,
+            "db_health": db_health,
+            "storage": storage,
             "budgets": await self._async_fetch_budgets(keys),
         }
 

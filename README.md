@@ -42,6 +42,9 @@ sourced from OmniRoute's own dashboard API instead of scraping each vendor:
   used up, then `Resets in 1h 20m`, with `used` / `total` / `resets_at` as attributes
 - **One device per OmniRoute API key** — spend today, spend this month, budget used, budget
   remaining, budget reset time, and a `Budget exceeded` problem binary sensor
+- **Gateway diagnostics** — system health, version, start time, open circuit breakers (with
+  per-provider state), active connections, heap usage, database size, plus `Degraded` and
+  `Database problem` binary sensors
 
 Accounts, windows and API keys are discovered on every poll, so anything added in OmniRoute
 appears without reloading the entry.

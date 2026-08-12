@@ -8,7 +8,7 @@ Assistant dependency, so this module can be tested on its own.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .const import STATUS_ERROR, STATUS_OK, STATUS_RATE_LIMITED, STATUS_UNKNOWN
@@ -214,6 +214,26 @@ class GatewayData:
     unique_models: int | None = None
     fallback_count: int | None = None
 
+    # /api/monitoring/health and the storage/database probes.
+    health_status: str | None = None
+    version: str | None = None
+    node_version: str | None = None
+    started_at: datetime | None = None
+    memory_used: int | None = None
+    memory_rss: int | None = None
+    active_connections: int | None = None
+    breakers_open: int | None = None
+    breakers_half_open: int | None = None
+    breakers_total: int | None = None
+    breaker_states: dict[str, str] = field(default_factory=dict)
+    degradation_active: bool = False
+    degraded_features: list[str] = field(default_factory=list)
+    database_healthy: bool | None = None
+    database_issues: list[str] = field(default_factory=list)
+    storage_driver: str | None = None
+    storage_bytes: int | None = None
+    last_backup_at: datetime | None = None
+
     @property
     def status(self) -> str:
         """Return a normalised gateway status."""
@@ -333,6 +353,44 @@ def parse_gateway(payload: dict[str, Any]) -> GatewayData:
         data.tokens_healthy = _int(health.get("healthy"))
         data.tokens_errored = _int(health.get("errored"))
         data.tokens_warning = _int(health.get("warning"))
+
+    if health := payload.get("health"):
+        system = health.get("system") or {}
+        data.health_status = health.get("status")
+        data.version = health.get("version") or system.get("version")
+        data.node_version = system.get("nodeVersion")
+        uptime = as_float(health.get("uptime") or system.get("uptime"))
+        if uptime is not None:
+            data.started_at = datetime.now(UTC) - timedelta(seconds=uptime)
+        memory = health.get("memoryUsage") or system.get("memoryUsage") or {}
+        data.memory_used = _int(memory.get("heapUsed"))
+        data.memory_rss = _int(memory.get("rss"))
+        data.active_connections = _int(health.get("activeConnections"))
+        breakers = health.get("circuitBreakers") or {}
+        data.breakers_open = _int(breakers.get("open"))
+        data.breakers_half_open = _int(breakers.get("halfOpen"))
+        data.breakers_total = _int(breakers.get("total"))
+        data.breaker_states = {
+            breaker.get("provider"): breaker.get("state")
+            for breaker in health.get("providerBreakers") or []
+            if isinstance(breaker, dict) and breaker.get("provider")
+        }
+
+    if degradation := payload.get("degradation"):
+        data.degradation_active = bool(degradation.get("active"))
+        data.degraded_features = [
+            feature.get("name") if isinstance(feature, dict) else str(feature)
+            for feature in degradation.get("features") or []
+        ]
+
+    if db_health := payload.get("db_health"):
+        data.database_healthy = bool(db_health.get("isHealthy"))
+        data.database_issues = [str(issue) for issue in db_health.get("issues") or []]
+
+    if storage := payload.get("storage"):
+        data.storage_driver = storage.get("driver")
+        data.storage_bytes = _int(storage.get("sizeBytes"))
+        data.last_backup_at = parse_datetime(storage.get("lastBackupAt"))
 
     summary = (payload.get("analytics") or {}).get("summary") or {}
     if summary:
