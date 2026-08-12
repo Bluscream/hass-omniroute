@@ -28,6 +28,28 @@ and a configurable base URL added.
 - Optional `max_tokens` / `temperature` per agent
 - Multiple agents per gateway via subentries; reconfigurable URL/key without re-adding
 
+### Provider & quota sensors
+
+Rebuilt from the [AI Limits](https://github.com/Bluscream/hass-ai-limits) integration, but
+sourced from OmniRoute's own dashboard API instead of scraping each vendor:
+
+- **Gateway device** — status, provider accounts, rate-limited accounts, requests, success
+  rate, tokens used, cost, average latency, models used
+- **One device per provider account** (`claude (you@example.com)`, `antigravity (…)`) —
+  status, quota remaining, soonest reset, token expiry, and a `Rate limited` problem binary
+  sensor
+- **One sensor per quota window** on each account — reads `70% remaining` until the window is
+  used up, then `Resets in 1h 20m`, with `used` / `total` / `resets_at` as attributes
+
+Accounts and windows are discovered on every poll, so accounts added in OmniRoute appear
+without reloading the entry.
+
+**Which entities are on by default:** the gateway and per-account summary sensors. The
+per-window sensors and the problem binary sensors are created *disabled* — a gateway with a
+few Antigravity accounts exposes 30+ windows — so you enable exactly the ones you want from
+the device page. Poll interval and a master on/off switch for all of this live in the
+integration's **Configure** dialog (default: every 5 minutes).
+
 ## Install
 
 Copy `custom_components/omniroute/` into your Home Assistant `config/custom_components/`
@@ -36,8 +58,10 @@ directory and restart, or add this repo to HACS as a custom repository.
 Then: **Settings → Devices & Services → Add Integration → OmniRoute**.
 
 - **Base URL** — `http://192.168.2.11:20128/v1` (note the `/v1` suffix)
-- **API key** — optional; leave empty if the gateway is open on your LAN. If you have one,
-  it's the `OMNIROUTE_TOKEN` value from your shell environment.
+- **API key** — optional for chat, **required for the sensors**. OmniRoute leaves `/v1` open
+  but returns 401 on the `/api` dashboard endpoints without a bearer token, so without a key
+  the conversation agent works and the monitoring sensors are skipped (with a warning in the
+  log). Use your `OMNIROUTE_TOKEN`.
 
 A conversation agent on `auto/best-chat` is created automatically. Add more agents or an
 AI Task entity from the integration page.
@@ -49,6 +73,7 @@ Tested against `http://192.168.2.11:20128/v1`:
 - `GET /v1/models` → 316 models
 - tool calling → returned `HassTurnOn {"name": "kitchen light"}`
 - `response_format: json_schema` (strict) → returned valid structured JSON
+- provider/quota parsing → 3 accounts, 32 quota windows, live headroom figures
 
 One gateway quirk the integration works around: OmniRoute **streams by default** when the
 request omits `stream`, returning SSE where the SDK expects JSON. The integration always

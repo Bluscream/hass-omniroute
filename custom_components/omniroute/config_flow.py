@@ -14,6 +14,7 @@ from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
     ConfigSubentryFlow,
+    OptionsFlow,
     SubentryFlowResult,
 )
 from homeassistant.const import CONF_API_KEY, CONF_LLM_HASS_API, CONF_MODEL, CONF_PROMPT
@@ -37,10 +38,15 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_BASE_URL,
     CONF_MAX_TOKENS,
+    CONF_MONITORING,
+    CONF_SCAN_INTERVAL,
     CONF_TEMPERATURE,
     DEFAULT_BASE_URL,
+    DEFAULT_MONITORING,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     LOGGER,
+    MIN_SCAN_INTERVAL,
     RECOMMENDED_CONVERSATION_OPTIONS,
 )
 
@@ -162,6 +168,12 @@ class OmniRouteConfigFlow(ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        """Return the options flow."""
+        return OmniRouteOptionsFlow()
+
     @classmethod
     @callback
     def async_get_supported_subentry_types(
@@ -172,6 +184,40 @@ class OmniRouteConfigFlow(ConfigFlow, domain=DOMAIN):
             "conversation": ConversationFlowHandler,
             "ai_task_data": AITaskFlowHandler,
         }
+
+
+class OmniRouteOptionsFlow(OptionsFlow):
+    """Control the provider/quota monitoring sensors."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage the monitoring options."""
+        if user_input is not None:
+            return self.async_create_entry(data=user_input)
+
+        options = self.config_entry.options
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_MONITORING,
+                    default=options.get(CONF_MONITORING, DEFAULT_MONITORING),
+                ): bool,
+                vol.Required(
+                    CONF_SCAN_INTERVAL,
+                    default=options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=MIN_SCAN_INTERVAL,
+                        max=86400,
+                        step=1,
+                        unit_of_measurement="s",
+                        mode=NumberSelectorMode.BOX,
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)
 
 
 class OmniRouteSubentryFlowHandler(ConfigSubentryFlow):

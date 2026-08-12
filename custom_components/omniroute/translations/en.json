@@ -18,7 +18,7 @@
         },
         "data_description": {
           "base_url": "The OpenAI-compatible endpoint of your OmniRoute gateway, e.g. http://192.168.2.11:20128/v1",
-          "api_key": "Optional. Leave empty if your gateway does not require authentication."
+          "api_key": "Optional for chat, but required for the provider and quota sensors \u2014 OmniRoute's dashboard API needs a token even when /v1 is open."
         }
       },
       "reconfigure": {
@@ -29,7 +29,7 @@
         },
         "data_description": {
           "base_url": "The OpenAI-compatible endpoint of your OmniRoute gateway",
-          "api_key": "Optional. Leave empty if your gateway does not require authentication."
+          "api_key": "Optional for chat, but required for the provider and quota sensors \u2014 OmniRoute's dashboard API needs a token even when /v1 is open."
         }
       }
     }
@@ -90,6 +90,22 @@
             "model": "Pick a model that supports structured outputs if you use structured AI tasks",
             "max_tokens": "Leave empty to use the model default"
           }
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "OmniRoute monitoring",
+        "description": "Sensors for the provider accounts and quotas OmniRoute manages.",
+        "data": {
+          "monitoring": "Enable provider and quota sensors",
+          "scan_interval": "Update interval"
+        },
+        "data_description": {
+          "monitoring": "Creates a device per provider account with status, quota and reset sensors. Per-model quota sensors are added disabled \u2014 enable the ones you want from the device page.",
+          "scan_interval": "How often to poll the gateway for provider and usage data"
         }
       }
     }

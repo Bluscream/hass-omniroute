@@ -287,7 +287,7 @@ class OmniRouteEntity(Entity):
                 ),
             )
 
-        client = self.entry.runtime_data
+        client = self.entry.runtime_data.client
 
         for _iteration in range(MAX_TOOL_ITERATIONS):
             try:
