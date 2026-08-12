@@ -108,6 +108,11 @@ class ConnectionData:
     percent_remaining: float | None = None
     resets_at: datetime | None = None
 
+    queued_requests: int | None = None
+    running_requests: int | None = None
+    rate_limit_protection: bool = False
+    locked_out: bool = False
+
     windows: dict[str, WindowData] = field(default_factory=dict)
 
     @property
@@ -135,8 +140,8 @@ class ConnectionData:
 
     @property
     def is_rate_limited(self) -> bool:
-        """Return whether the account or any of its windows is exhausted."""
-        if self.backoff_level:
+        """Return whether the account is backing off, locked out or exhausted."""
+        if self.backoff_level or self.locked_out:
             return True
         if self.percent_remaining is not None and self.percent_remaining <= 0:
             return True
@@ -151,10 +156,46 @@ class ConnectionData:
 
 
 @dataclass
+class ApiKeyData:
+    """One OmniRoute API key, with its spend against any configured budget."""
+
+    key_id: str
+    name: str
+    prefix: str | None = None
+    is_active: bool = True
+    last_used_at: datetime | None = None
+
+    cost_today: float | None = None
+    cost_month: float | None = None
+    cost_period: float | None = None
+    daily_limit: float | None = None
+    weekly_limit: float | None = None
+    monthly_limit: float | None = None
+    active_limit: float | None = None
+    remaining: float | None = None
+    next_reset_at: datetime | None = None
+    warning_reached: bool = False
+    allowed: bool = True
+
+    @property
+    def has_budget(self) -> bool:
+        """Return whether a spend limit is actually configured."""
+        return bool(self.active_limit)
+
+    @property
+    def budget_used_percent(self) -> float | None:
+        """Return spend against the active limit, as a percentage."""
+        if not self.active_limit or self.cost_period is None:
+            return None
+        return min(100.0, self.cost_period / self.active_limit * 100)
+
+
+@dataclass
 class GatewayData:
     """Gateway-wide totals, alongside every configured connection."""
 
     connections: dict[str, ConnectionData] = field(default_factory=dict)
+    api_keys: dict[str, ApiKeyData] = field(default_factory=dict)
 
     token_status: str | None = None
     tokens_total: int | None = None
@@ -231,6 +272,21 @@ def parse_gateway(payload: dict[str, Any]) -> GatewayData:
         connection.resets_at = parse_datetime(raw.get("resetAt"))
         connection.token_status = raw.get("tokenStatus")
 
+    rate_limits = payload.get("rate_limits") or {}
+    locked_out = {
+        lockout.get("connectionId")
+        for lockout in rate_limits.get("lockouts") or []
+        if isinstance(lockout, dict)
+    }
+    for raw in rate_limits.get("connections") or []:
+        connection = data.connections.get(raw.get("connectionId"))
+        if connection is None:
+            continue
+        connection.queued_requests = _int(raw.get("queued"))
+        connection.running_requests = _int(raw.get("running"))
+        connection.rate_limit_protection = bool(raw.get("rateLimitProtection"))
+        connection.locked_out = raw.get("connectionId") in locked_out
+
     caches = (payload.get("limits") or {}).get("caches") or {}
     for connection_id, cache in caches.items():
         connection = data.connections.get(connection_id)
@@ -241,6 +297,35 @@ def parse_gateway(payload: dict[str, Any]) -> GatewayData:
                 continue
             window = WindowData.from_payload(name, quota)
             connection.windows[window.key] = window
+
+    budgets = payload.get("budgets") or {}
+    for raw in (payload.get("keys") or {}).get("keys") or []:
+        key_id = raw.get("id")
+        if not key_id or raw.get("revokedAt"):
+            continue
+        key = ApiKeyData(
+            key_id=key_id,
+            name=raw.get("name") or raw.get("keyPrefix") or key_id[:8],
+            prefix=raw.get("keyPrefix"),
+            is_active=bool(raw.get("isActive", True)),
+            last_used_at=parse_datetime(raw.get("lastUsedAt")),
+        )
+        budget = budgets.get(key_id) or {}
+        check = budget.get("budgetCheck") or {}
+        key.cost_today = as_float(budget.get("totalCostToday"))
+        key.cost_month = as_float(budget.get("totalCostMonth"))
+        key.cost_period = as_float(budget.get("totalCostPeriod"))
+        key.daily_limit = as_float(budget.get("dailyLimitUsd"))
+        key.weekly_limit = as_float(budget.get("weeklyLimitUsd"))
+        key.monthly_limit = as_float(budget.get("monthlyLimitUsd"))
+        key.active_limit = as_float(budget.get("activeLimitUsd"))
+        key.remaining = as_float(check.get("remaining"))
+        key.next_reset_at = parse_datetime(
+            budget.get("nextResetAt") or budget.get("budgetResetAt")
+        )
+        key.warning_reached = bool(check.get("warningReached"))
+        key.allowed = bool(check.get("allowed", True))
+        data.api_keys[key_id] = key
 
     if health := payload.get("token_health"):
         data.token_status = health.get("status")

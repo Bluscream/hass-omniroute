@@ -16,11 +16,12 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from . import OmniRouteConfigEntry
 from .const import STATUS_OK
 from .coordinator import (
+    OmniRouteApiKeyEntity,
     OmniRouteConnectionEntity,
     OmniRouteCoordinator,
     OmniRouteGatewayEntity,
 )
-from .models import ConnectionData
+from .models import ApiKeyData, ConnectionData
 
 
 async def async_setup_entry(
@@ -42,6 +43,12 @@ async def async_setup_entry(
                 continue
             known.add(connection.connection_id)
             entities.append(ConnectionRateLimitedSensor(coordinator, connection))
+        for api_key in coordinator.data.api_keys.values():
+            marker = f"key_{api_key.key_id}"
+            if marker in known:
+                continue
+            known.add(marker)
+            entities.append(ApiKeyBudgetSensor(coordinator, api_key))
         if entities:
             async_add_entities(entities)
 
@@ -86,3 +93,28 @@ class ConnectionRateLimitedSensor(OmniRouteConnectionEntity, BinarySensorEntity)
         if (connection := self.connection) is None:
             return None
         return connection.is_rate_limited
+
+
+class ApiKeyBudgetSensor(OmniRouteApiKeyEntity, BinarySensorEntity):
+    """On when a key has hit its spend limit, or its warning threshold."""
+
+    _attr_name = "Budget exceeded"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator: OmniRouteCoordinator, api_key: ApiKeyData) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, api_key, "budget_exceeded")
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return whether the key is over budget.
+
+        Keys with no configured limit are never over budget, rather than
+        reporting a problem against a limit of zero.
+        """
+        if (api_key := self.api_key) is None:
+            return None
+        if not api_key.has_budget:
+            return False
+        return not api_key.allowed or api_key.warning_reached

@@ -32,11 +32,12 @@ from homeassistant.util import dt as dt_util
 from . import OmniRouteConfigEntry
 from .const import STATUS_ERROR, STATUS_OK, STATUS_RATE_LIMITED, STATUS_UNKNOWN
 from .coordinator import (
+    OmniRouteApiKeyEntity,
     OmniRouteConnectionEntity,
     OmniRouteCoordinator,
     OmniRouteGatewayEntity,
 )
-from .models import ConnectionData, GatewayData, WindowData
+from .models import ApiKeyData, ConnectionData, GatewayData, WindowData
 
 STATUS_OPTIONS = [STATUS_OK, STATUS_RATE_LIMITED, STATUS_ERROR, STATUS_UNKNOWN]
 
@@ -181,6 +182,74 @@ GATEWAY_SENSORS: tuple[GatewaySensorDescription, ...] = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class ApiKeySensorDescription(SensorEntityDescription):
+    """Describes a per-API-key sensor."""
+
+    value_fn: Callable[[ApiKeyData], StateType | datetime]
+    attr_fn: Callable[[ApiKeyData], dict] | None = None
+
+
+API_KEY_SENSORS: tuple[ApiKeySensorDescription, ...] = (
+    ApiKeySensorDescription(
+        key="cost_today",
+        name="Spend today",
+        icon="mdi:cash-clock",
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=4,
+        value_fn=lambda k: k.cost_today,
+        attr_fn=lambda k: {
+            "daily_limit_usd": k.daily_limit,
+            "weekly_limit_usd": k.weekly_limit,
+            "monthly_limit_usd": k.monthly_limit,
+            "key_prefix": k.prefix,
+            "last_used": k.last_used_at.isoformat() if k.last_used_at else None,
+        },
+    ),
+    ApiKeySensorDescription(
+        key="cost_month",
+        name="Spend this month",
+        icon="mdi:cash-multiple",
+        state_class=SensorStateClass.TOTAL,
+        suggested_display_precision=4,
+        value_fn=lambda k: k.cost_month,
+    ),
+    ApiKeySensorDescription(
+        key="budget_used",
+        name="Budget used",
+        icon="mdi:wallet",
+        native_unit_of_measurement="%",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda k: k.budget_used_percent,
+        attr_fn=lambda k: {
+            "spent_this_period_usd": k.cost_period,
+            "active_limit_usd": k.active_limit,
+            "remaining_usd": k.remaining,
+            "warning_reached": k.warning_reached,
+        },
+    ),
+    ApiKeySensorDescription(
+        key="budget_remaining",
+        name="Budget remaining",
+        icon="mdi:cash-check",
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=4,
+        entity_registry_enabled_default=False,
+        value_fn=lambda k: k.remaining if k.has_budget else None,
+    ),
+    ApiKeySensorDescription(
+        key="budget_reset",
+        name="Budget resets",
+        icon="mdi:calendar-refresh",
+        device_class=SensorDeviceClass.TIMESTAMP,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda k: k.next_reset_at,
+    ),
+)
+
+
 CONNECTION_SENSORS: tuple[ConnectionSensorDescription, ...] = (
     ConnectionSensorDescription(
         key="status",
@@ -202,6 +271,10 @@ CONNECTION_SENSORS: tuple[ConnectionSensorDescription, ...] = (
             "token_status": c.token_status,
             "last_tested": c.last_tested_at.isoformat() if c.last_tested_at else None,
             "quota_windows": len(c.windows),
+            "queued_requests": c.queued_requests,
+            "running_requests": c.running_requests,
+            "rate_limit_protection": c.rate_limit_protection,
+            "locked_out": c.locked_out,
         },
     ),
     ConnectionSensorDescription(
@@ -275,6 +348,15 @@ async def async_setup_entry(
                     continue
                 known.add(key)
                 entities.append(OmniRouteWindowSensor(coordinator, connection, window))
+        for api_key in coordinator.data.api_keys.values():
+            for description in API_KEY_SENSORS:
+                key = f"key_{api_key.key_id}_{description.key}"
+                if key in known:
+                    continue
+                known.add(key)
+                entities.append(
+                    OmniRouteApiKeySensor(coordinator, api_key, description)
+                )
         if entities:
             async_add_entities(entities)
 
@@ -416,4 +498,36 @@ class OmniRouteWindowSensor(OmniRouteConnectionEntity, SensorEntity):
             "resets_at": window.resets_at.isoformat() if window.resets_at else None,
             "resets_in_seconds": _seconds_until(window.resets_at),
         }
+        return {k: v for k, v in attrs.items() if v is not None}
+
+
+class OmniRouteApiKeySensor(OmniRouteApiKeyEntity, SensorEntity):
+    """A spend or budget metric for one OmniRoute API key."""
+
+    entity_description: ApiKeySensorDescription
+
+    def __init__(
+        self,
+        coordinator: OmniRouteCoordinator,
+        api_key: ApiKeyData,
+        description: ApiKeySensorDescription,
+    ) -> None:
+        """Initialize the sensor."""
+        super().__init__(coordinator, api_key, description.key)
+        self.entity_description = description
+
+    @property
+    def native_value(self) -> StateType | datetime:
+        """Return the current value."""
+        if (api_key := self.api_key) is None:
+            return None
+        return self.entity_description.value_fn(api_key)
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        """Return the extra attributes, dropping unknown values."""
+        api_key = self.api_key
+        if self.entity_description.attr_fn is None or api_key is None:
+            return None
+        attrs = self.entity_description.attr_fn(api_key)
         return {k: v for k, v in attrs.items() if v is not None}

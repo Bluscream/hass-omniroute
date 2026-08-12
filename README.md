@@ -40,9 +40,20 @@ sourced from OmniRoute's own dashboard API instead of scraping each vendor:
   sensor
 - **One sensor per quota window** on each account — reads `70% remaining` until the window is
   used up, then `Resets in 1h 20m`, with `used` / `total` / `resets_at` as attributes
+- **One device per OmniRoute API key** — spend today, spend this month, budget used, budget
+  remaining, budget reset time, and a `Budget exceeded` problem binary sensor
 
-Accounts and windows are discovered on every poll, so accounts added in OmniRoute appear
-without reloading the entry.
+Accounts, windows and API keys are discovered on every poll, so anything added in OmniRoute
+appears without reloading the entry.
+
+Only `/api/providers` is required. Everything else — quota, per-model limits, rate limits,
+token health, analytics, keys, budgets — degrades to unknown if a gateway version doesn't
+serve it. `/api/usage/quota` and `/api/usage/provider-limits` are notably absent from the
+gateway's own `openapi.yaml` even though they work, which is why they're treated that way.
+
+Model pricing (`/api/pricing`) is deliberately not exposed: it's a static rate card for every
+model, not per-user state, so it belongs in a template if you need it rather than in hundreds
+of sensors.
 
 **Which entities are on by default:** the gateway and per-account summary sensors. The
 per-window sensors and the problem binary sensors are created *disabled* — a gateway with a

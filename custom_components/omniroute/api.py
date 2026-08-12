@@ -13,7 +13,7 @@ from typing import Any
 import aiohttp
 from yarl import URL
 
-from .const import LOGGER
+from .const import LOGGER, MAX_BUDGET_KEYS
 
 
 class OmniRouteApiError(Exception):
@@ -43,7 +43,8 @@ class OmniRouteApi:
 
     async def _get(self, path: str) -> Any:
         """GET a JSON document from the gateway."""
-        url = self._root / path.lstrip("/")
+        # Built by string rather than the / operator so query strings survive.
+        url = URL(f"{self._root}{path.lstrip('/')}")
         try:
             async with self._session.get(
                 url,
@@ -69,20 +70,68 @@ class OmniRouteApi:
             return None
 
     async def async_fetch_all(self) -> dict[str, Any]:
-        """Fetch every dashboard document used by the sensors, concurrently."""
-        connections, quota, limits, token_health, analytics = await asyncio.gather(
+        """Fetch every dashboard document used by the sensors, concurrently.
+
+        Only ``/api/providers`` is required — it is the account list every
+        device is built from. ``/api/usage/quota`` and
+        ``/api/usage/provider-limits`` carry the live headroom figures but are
+        absent from the gateway's own OpenAPI document, so they are treated as
+        best-effort and their sensors simply go unknown if a future version
+        drops them.
+        """
+        (
+            connections,
+            quota,
+            limits,
+            rate_limits,
+            token_health,
+            analytics,
+            keys,
+        ) = await asyncio.gather(
             self._get("/api/providers"),
-            self._get("/api/usage/quota"),
+            self._get_optional("/api/usage/quota"),
             self._get_optional("/api/usage/provider-limits"),
+            self._get_optional("/api/rate-limits"),
             self._get_optional("/api/token-health"),
             self._get_optional("/api/usage/analytics"),
+            self._get_optional("/api/keys"),
         )
         return {
             "connections": connections,
             "quota": quota,
             "limits": limits,
+            "rate_limits": rate_limits,
             "token_health": token_health,
             "analytics": analytics,
+            "keys": keys,
+            "budgets": await self._async_fetch_budgets(keys),
+        }
+
+    async def _async_fetch_budgets(self, keys: Any) -> dict[str, Any]:
+        """Fetch the spend/budget document for each live API key.
+
+        ``/api/usage/budget`` is per-key and takes no bulk form, so this is one
+        request per key. Revoked and inactive keys are skipped, and the total is
+        capped so a gateway with many keys cannot turn one poll into a storm.
+        """
+        wanted = [
+            key["id"]
+            for key in (keys or {}).get("keys") or []
+            if key.get("id") and not key.get("revokedAt") and key.get("isActive", True)
+        ][:MAX_BUDGET_KEYS]
+        if not wanted:
+            return {}
+
+        documents = await asyncio.gather(
+            *(
+                self._get_optional(f"/api/usage/budget?apiKeyId={key_id}")
+                for key_id in wanted
+            )
+        )
+        return {
+            key_id: document
+            for key_id, document in zip(wanted, documents, strict=True)
+            if document is not None
         }
 
 

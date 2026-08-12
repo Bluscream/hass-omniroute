@@ -25,6 +25,9 @@ DEFAULT_MONITORING = True
 DEFAULT_SCAN_INTERVAL = 300
 MIN_SCAN_INTERVAL = 30
 
+# Cap on per-key budget requests issued per poll.
+MAX_BUDGET_KEYS = 25
+
 # Status values
 STATUS_OK = "ok"
 STATUS_RATE_LIMITED = "rate_limited"
