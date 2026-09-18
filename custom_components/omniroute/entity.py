@@ -25,7 +25,11 @@ from openai.types.chat.chat_completion_message_function_tool_call_param import F
 from openai.types.shared_params import FunctionDefinition, ResponseFormatJSONSchema
 from openai.types.shared_params.response_format_json_schema import JSONSchema
 import voluptuous as vol
-from voluptuous_openapi import convert
+
+try:
+    from probatio import to_openapi as convert
+except ImportError:
+    from voluptuous_openapi import convert
 
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigSubentry
